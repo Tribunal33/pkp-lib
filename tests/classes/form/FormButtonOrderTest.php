@@ -14,15 +14,20 @@
  * @brief Test class for form button order fix (GitHub issue #3).
  * Tests that the formButtons.tpl template renders buttons in the correct order:
  * Go Back, Save for Later, Submit Review (NOT Go Back, Submit Review, Save for Later)
+ * 
+ * This test uses actual template markup elements instead of comments to ensure
+ * robustness even if comments are removed or modified.
  */
 
 namespace PKP\tests\classes\form;
 
-use PHPUnit\Framework\Attributes\CoversNothing;
-use PKP\tests\PKPTestCase;
+use PHPUnit\Framework\TestCase;
 
-#[CoversNothing]
-class FormButtonOrderTest extends PKPTestCase
+/**
+ * Tests that use actual template markup elements instead of comments to ensure
+ * robustness even if comments are removed or modified.
+ */
+class FormButtonOrderTest extends TestCase
 {
     private $templatePath;
 
@@ -43,43 +48,45 @@ class FormButtonOrderTest extends PKPTestCase
 
     /**
      * Test that the template contains the expected button sections in the correct order
+     * This test uses actual markup elements instead of comments to avoid fragility
      */
     public function testButtonOrderInTemplate()
     {
         $templateContent = file_get_contents($this->templatePath);
         
-        // Verify template contains expected sections
-        $this->assertMatchesRegularExpression('/Cancel button \(if any\)/', $templateContent, 'Template should contain cancel button section');
-        $this->assertMatchesRegularExpression('/Save button/', $templateContent, 'Template should contain save button section');
-        $this->assertMatchesRegularExpression('/Submit button/', $templateContent, 'Template should contain submit button section');
+        // Verify template contains expected button elements (not comments)
+        $this->assertStringContainsString('class="cancelButton"', $templateContent, 'Template should contain cancel button element');
+        $this->assertStringContainsString('class="saveFormButton"', $templateContent, 'Template should contain save button element');
+        $this->assertStringContainsString('class="{if $FBV_saveText}pkp_button_primary{/if} submitFormButton"', $templateContent, 'Template should contain submit button element');
         
-        // Check the order by finding line positions
+        // Check the order by finding line positions of actual elements
         $lines = explode("\n", $templateContent);
-        $cancelLine = $this->findLineWithText($lines, 'Cancel button (if any)');
-        $saveLine = $this->findLineWithText($lines, 'Save button');
-        $submitLine = $this->findLineWithText($lines, 'Submit button');
+        $cancelLine = $this->findLineWithElement($lines, 'class="cancelButton"');
+        $saveLine = $this->findLineWithElement($lines, 'class="saveFormButton"');
+        $submitLine = $this->findLineWithElement($lines, 'submitFormButton"');
         
-        // Verify all sections were found
-        $this->assertGreaterThan(-1, $cancelLine, 'Cancel button section should be found');
-        $this->assertGreaterThan(-1, $saveLine, 'Save button section should be found');
-        $this->assertGreaterThan(-1, $submitLine, 'Submit button section should be found');
+        // Verify all button elements were found
+        $this->assertGreaterThan(-1, $cancelLine, 'Cancel button element should be found');
+        $this->assertGreaterThan(-1, $saveLine, 'Save button element should be found');
+        $this->assertGreaterThan(-1, $submitLine, 'Submit button element should be found');
         
         // Test the order: Cancel < Save < Submit (GitHub issue #3 fix)
-        $this->assertLessThan($saveLine, $cancelLine, 'Cancel button section should appear before Save button section');
-        $this->assertLessThan($submitLine, $saveLine, 'Save button section should appear before Submit button section');
+        $this->assertLessThan($saveLine, $cancelLine, 'Cancel button element should appear before Save button element');
+        $this->assertLessThan($submitLine, $saveLine, 'Save button element should appear before Submit button element');
     }
 
     /**
      * Test that the actual button generation elements are in the correct order
+     * This test focuses on the fbvElement markup instead of comments
      */
     public function testButtonGenerationOrder()
     {
         $templateContent = file_get_contents($this->templatePath);
         $lines = explode("\n", $templateContent);
         
-        // Find the actual button generation lines
-        $saveButtonLine = $this->findLineWithText($lines, 'fbvElement type="submit" class="saveFormButton"');
-        $submitButtonLine = $this->findLineWithText($lines, 'fbvElement type="submit" class=', 'submitFormButton');
+        // Find the actual button generation lines using specific identifiers
+        $saveButtonLine = $this->findLineWithElement($lines, 'name="saveFormButton"');
+        $submitButtonLine = $this->findLineWithElement($lines, 'name="submitFormButton"');
         
         // Verify both button generation lines were found
         $this->assertGreaterThan(-1, $saveButtonLine, 'Save button generation should be found');
@@ -90,24 +97,23 @@ class FormButtonOrderTest extends PKPTestCase
     }
 
     /**
-     * Test that the template produces the expected button order when simulated
+     * Test that the template produces the expected button order when analyzed
+     * This test uses conditional blocks and element structure instead of comments
      */
-    public function testSimulatedButtonOrder()
+    public function testTemplateStructureButtonOrder()
     {
-        // Create a mock template manager that doesn't require PKP initialization
-        $mockTemplateManager = $this->createMock(\stdClass::class);
-        
-        // Test the expected button order directly
+        // Test the expected button order by analyzing template structure
         $expectedOrder = ['Go Back', 'Save for Later', 'Submit Review'];
-        $actualOrder = $this->getButtonOrderFromTemplate();
+        $actualOrder = $this->getButtonOrderFromTemplateStructure();
         
         $this->assertEquals($expectedOrder, $actualOrder, 'Button order should match GitHub issue #3 requirements');
     }
     
     /**
-     * Extract button order from template structure
+     * Extract button order from template structure using actual elements
+     * This method analyzes conditional blocks and element positions, not comments
      */
-    private function getButtonOrderFromTemplate(): array
+    private function getButtonOrderFromTemplateStructure(): array
     {
         $templateContent = file_get_contents($this->templatePath);
         $lines = explode("\n", $templateContent);
@@ -115,13 +121,18 @@ class FormButtonOrderTest extends PKPTestCase
         $buttonOrder = [];
         $sectionPositions = [];
         
-        // Find comment sections to determine order
+        // Find actual element positions to determine order
         foreach ($lines as $lineNum => $line) {
-            if (strpos($line, 'Cancel button (if any)') !== false) {
+            // Look for cancel button (actual element, not comment)
+            if (strpos($line, 'class="cancelButton"') !== false) {
                 $sectionPositions['cancel'] = $lineNum;
-            } elseif (strpos($line, 'Save button') !== false && strpos($line, 'Submit button') === false) {
+            }
+            // Look for save button conditional block start (exact match to avoid submit button line)
+            elseif (trim($line) === '{if $FBV_saveText}') {
                 $sectionPositions['save'] = $lineNum;
-            } elseif (strpos($line, 'Submit button') !== false && strpos($line, 'Save button') === false) {
+            }
+            // Look for submit button assignment (unique identifier)
+            elseif (strpos($line, '{assign var=submitButtonId') !== false) {
                 $sectionPositions['submit'] = $lineNum;
             }
         }
@@ -146,29 +157,42 @@ class FormButtonOrderTest extends PKPTestCase
     }
 
     /**
-     * Helper method to find a line containing specific text
+     * Helper method to find a line containing specific element markup
+     * This focuses on actual template elements instead of comments
      */
-    private function findLineWithText(array $lines, string $searchText, string $additionalText = null): int
+    private function findLineWithElement(array $lines, string $searchText): int
     {
         foreach ($lines as $lineNum => $line) {
             if (strpos($line, $searchText) !== false) {
-                // If additional text is specified, make sure it's also present (or not present for exclusion)
-                if ($additionalText !== null) {
-                    if (strpos($line, $additionalText) !== false) {
-                        return $lineNum;
-                    }
-                } else {
-                    // For "Save button" vs "Submit button", exclude lines that contain both
-                    if ($searchText === 'Save button' && strpos($line, 'Submit button') !== false) {
-                        continue;
-                    }
-                    if ($searchText === 'Submit button' && strpos($line, 'Save button') !== false) {
-                        continue;
-                    }
-                    return $lineNum;
-                }
+                return $lineNum;
             }
         }
         return -1;
+    }
+
+    /**
+     * Test that conditional blocks appear in the correct order
+     * This test focuses on the {if} blocks that control button visibility
+     */
+    public function testConditionalBlockOrder()
+    {
+        $templateContent = file_get_contents($this->templatePath);
+        $lines = explode("\n", $templateContent);
+        
+        // Find conditional blocks that control button rendering
+        $cancelConditionLine = $this->findLineWithElement($lines, '{if !$FBV_hideCancel}');
+        $saveConditionLine = $this->findLineWithElement($lines, '{if $FBV_saveText}');
+        
+        // Find submit button ID assignment (appears before submit button rendering)
+        $submitIdLine = $this->findLineWithElement($lines, '{assign var=submitButtonId');
+        
+        // Verify all conditional elements were found
+        $this->assertGreaterThan(-1, $cancelConditionLine, 'Cancel button conditional should be found');
+        $this->assertGreaterThan(-1, $saveConditionLine, 'Save button conditional should be found');
+        $this->assertGreaterThan(-1, $submitIdLine, 'Submit button ID assignment should be found');
+        
+        // Test the order: Cancel condition < Save condition < Submit setup
+        $this->assertLessThan($saveConditionLine, $cancelConditionLine, 'Cancel conditional should appear before Save conditional');
+        $this->assertLessThan($submitIdLine, $saveConditionLine, 'Save conditional should appear before Submit setup');
     }
 }
