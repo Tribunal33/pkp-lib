@@ -313,6 +313,44 @@ class PKPUserController extends PKPBaseController
         );
     }
 
+    /**
+     * Determine whether the current user may manage the target user's role
+     * assignments (end a role, change masthead visibility).
+     *
+     * This mirrors the authorization of the Users & Roles grid, which is the
+     * only interface that legitimately exposes these actions:
+     *  - the current user must be able to reach the Users & Roles settings area
+     *    (a site administrator, or a manager whose user group permits settings
+     *    access), so roles without that access (e.g. section editors) are denied; and
+     *  - the current user must have administrative authority over the target
+     *    user, so a user they cannot administer (e.g. the site administrator)
+     *    is protected.
+     */
+    protected function canManageUserRoles(Request $request, int $targetUserId, Context $context): bool
+    {
+        $currentUser = $request->user();
+        if (!$currentUser) {
+            return false;
+        }
+
+        // Must have administrative authority over the target user.
+        if (Validation::getAdministrationLevel($targetUserId, $currentUser->getId(), $context->getId()) === Validation::ADMINISTRATION_PROHIBITED) {
+            return false;
+        }
+
+        // Must have access to the Users & Roles settings area.
+        if (Validation::isSiteAdmin()) {
+            return true;
+        }
+        foreach (Repo::userGroup()->userUserGroups($currentUser->getId(), $context->getId()) as $userGroup) {
+            if ($userGroup->roleId === Role::ROLE_ID_MANAGER && $userGroup->permitSettings) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function endRole(Request $request): JsonResponse
     {
         // Ensure user exists
@@ -322,6 +360,17 @@ class PKPUserController extends PKPBaseController
             return response()->json([
                 'error' => __('api.404.resourceNotFound')
             ], Response::HTTP_NOT_FOUND);
+        }
+
+        // Ensure the current user may manage this user's role assignments.
+        // Mirrors the Users & Roles grid: settings access is required, and a
+        // user the current user cannot administer (e.g. the site administrator)
+        // is off limits.
+        $context = $request->attributes->get('context'); /** @var Context $context */
+        if (!$this->canManageUserRoles($request, $user->getId(), $context)) {
+            return response()->json([
+                'error' => __('api.403.unauthorized')
+            ], Response::HTTP_FORBIDDEN);
         }
 
         // Ensure user has role
@@ -336,7 +385,6 @@ class PKPUserController extends PKPBaseController
         }
 
         // Set end date for role and save
-        $context = $request->attributes->get('context'); /** @var Context $context */
         Repo::userGroup()->endAssignments($context->getId(), $userId, $userGroupId);
 
         // Send email notification
@@ -375,8 +423,18 @@ class PKPUserController extends PKPBaseController
             ], Response::HTTP_NOT_FOUND);
         }
 
-        // Ensure UserUserGroup exists and belongs to the current context and user
+        // Ensure the current user may manage this user's role assignments.
+        // Mirrors the Users & Roles grid: settings access is required, and a
+        // user the current user cannot administer (e.g. the site administrator)
+        // is off limits.
         $context = $request->attributes->get('context'); /** @var Context $context */
+        if (!$this->canManageUserRoles($request, $user->getId(), $context)) {
+            return response()->json([
+                'error' => __('api.403.unauthorized')
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        // Ensure UserUserGroup exists and belongs to the current context and user
         $userUserGroupId = (int) $request->route('userUserGroupId');
         $userUserGroup = UserUserGroup::query()
             ->withUserId($userId)
