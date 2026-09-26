@@ -313,6 +313,31 @@ class PKPUserController extends PKPBaseController
         );
     }
 
+    protected function canManageUserRoles(Request $request, int $targetUserId, Context $context): bool
+    {
+        $currentUser = $request->user();
+        if (!$currentUser) {
+            return false;
+        }
+
+        // Must have administrative authority over the target user.
+        if (Validation::getAdministrationLevel($targetUserId, $currentUser->getId(), $context->getId()) === Validation::ADMINISTRATION_PROHIBITED) {
+            return false;
+        }
+
+        // Must have access to the Users & Roles settings area.
+        if (Validation::isSiteAdmin()) {
+            return true;
+        }
+        foreach (Repo::userGroup()->userUserGroups($currentUser->getId(), $context->getId()) as $userGroup) {
+            if ($userGroup->roleId === Role::ROLE_ID_MANAGER && $userGroup->permitSettings) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function endRole(Request $request): JsonResponse
     {
         // Ensure user exists
@@ -322,6 +347,13 @@ class PKPUserController extends PKPBaseController
             return response()->json([
                 'error' => __('api.404.resourceNotFound')
             ], Response::HTTP_NOT_FOUND);
+        }
+
+        $context = $request->attributes->get('context');
+        if (!$this->canManageUserRoles($request, $user->getId(), $context)) {
+            return response()->json([
+                'error' => __('api.403.unauthorized')
+            ], Response::HTTP_FORBIDDEN);
         }
 
         // Ensure user has role
@@ -377,6 +409,13 @@ class PKPUserController extends PKPBaseController
 
         // Ensure UserUserGroup exists and belongs to the current context and user
         $context = $request->attributes->get('context'); /** @var Context $context */
+        if (!$this->canManageUserRoles($request, $user->getId(), $context)) {
+            return response()->json([
+                'error' => __('api.403.unauthorized')
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        // Ensure UserUserGroup exists and belongs to the current context and user
         $userUserGroupId = (int) $request->route('userUserGroupId');
         $userUserGroup = UserUserGroup::query()
             ->withUserId($userId)
